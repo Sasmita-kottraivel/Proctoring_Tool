@@ -1,31 +1,43 @@
+#define IR_SENSOR_1 4   // bottle presence
+#define IR_SENSOR_2 5   // drop detection
 #define TRIG_PIN 18
 #define ECHO_PIN 19
 
 void setup() {
   Serial.begin(115200);
+
+  pinMode(IR_SENSOR_1, INPUT);
+  pinMode(IR_SENSOR_2, INPUT);
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  Serial.println("Ultrasonic sensor ready.");
+
+  Serial.println("Sensors ready.");
 }
 
 void loop() {
-  // Send a 10 microsecond pulse to trigger
+  // --- IR sensors ---
+  int ir1 = digitalRead(IR_SENSOR_1);
+  int ir2 = digitalRead(IR_SENSOR_2);
+
+  // --- Ultrasonic ---
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  // Measure how long the echo pin stays HIGH
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout
-
-  // Convert to distance: speed of sound ~343 m/s -> 0.0343 cm/us, divide by 2 (round trip)
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
   float distanceCm = (duration * 0.0343) / 2;
 
+  // --- Print everything together ---
+  Serial.print("IR1 (bottle): ");
+  Serial.print(ir1 == LOW ? "DETECTED" : "clear");
+  Serial.print("   |   IR2 (drop): ");
+  Serial.print(ir2 == LOW ? "DETECTED" : "clear");
+  Serial.print("   |   Distance: ");
   if (duration == 0) {
-    Serial.println("No echo received (out of range or wiring issue)");
+    Serial.println("no echo");
   } else {
-    Serial.print("Distance: ");
     Serial.print(distanceCm);
     Serial.println(" cm");
   }
