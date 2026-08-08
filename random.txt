@@ -25,3 +25,26 @@ Connecting...
 A serial exception error occurred: ClearCommError failed (OSError(22, 'A device which does not exist was specified.', None, 433))
 Note: This error originates from pySerial. It is likely not a problem with esptool, but with the hardware connection or drivers.
 For troubleshooting steps visit: https://docs.espressif.com/projects/esptool/en/latest/troubleshooting.html
+
+
+#define IR_SENSOR_1 4   // bottle presence
+#define IR_SENSOR_2 5   // drop detection
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(IR_SENSOR_1, INPUT);
+  pinMode(IR_SENSOR_2, INPUT);
+  Serial.println("IR sensors ready. Waving hand in front should change readings.");
+}
+
+void loop() {
+  int val1 = digitalRead(IR_SENSOR_1);
+  int val2 = digitalRead(IR_SENSOR_2);
+
+  Serial.print("IR1 (bottle): ");
+  Serial.print(val1 == LOW ? "DETECTED" : "clear");
+  Serial.print("   |   IR2 (drop): ");
+  Serial.println(val2 == LOW ? "DETECTED" : "clear");
+
+  delay(300);
+}
