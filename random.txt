@@ -1,1 +1,12 @@
 https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers
+
+
+Sketch uses 281628 bytes (8%) of program storage space. Maximum is 3145728 bytes.
+Global variables use 22172 bytes (6%) of dynamic memory, leaving 305508 bytes for local variables. Maximum is 327680 bytes.
+esptool v5.3.1
+Serial port COM7:
+Connecting......................................
+
+A fatal error occurred: Failed to connect to ESP32: No serial data received.
+For troubleshooting steps visit: https://docs.espressif.com/projects/esptool/en/latest/troubleshooting.html
+Failed uploading: uploading error: exit status 2
