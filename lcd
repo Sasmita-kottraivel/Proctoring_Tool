@@ -1,0 +1,131 @@
+/*
+  Bottle Recycling Machine - Main ESP32 Sketch (work in progress)
+
+  Currently wired and tested:
+    - IR sensor 1 (bottle presence) -> GPIO 4
+    - IR sensor 2 (drop detection)  -> GPIO 5
+    - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19
+    - 16x2 parallel LCD             -> RS 13, E 12, D4 33, D5 26, D6 25... (see wiring table)
+
+  Paused / not yet wired (commented out below, ready to re-enable later):
+    - Button       -> GPIO 27
+    - LEDs         -> GPIO 21 (red), 22 (yellow), 23 (green)
+    - Buzzer       -> GPIO 25   *** NOTE: currently reused by LCD D7, reassign before enabling ***
+*/
+
+#include <LiquidCrystal.h>
+
+// ---------------------------------------------------------------------------
+// Pin definitions
+// ---------------------------------------------------------------------------
+#define IR_SENSOR_1 4
+#define IR_SENSOR_2 5
+#define TRIG_PIN 18
+#define ECHO_PIN 19
+
+// LCD pins (parallel, 4-bit mode): RS, E, D4, D5, D6, D7
+#define LCD_RS 13
+#define LCD_E 12
+#define LCD_D4 14
+#define LCD_D5 33
+#define LCD_D6 26
+#define LCD_D7 25
+
+// -- Paused components, uncomment when wired --
+// #define BUTTON_PIN 27
+// #define LED_RED 21
+// #define LED_YELLOW 22
+// #define LED_GREEN 23
+// #define BUZZER 32   // reassigned off GPIO25 since LCD D7 now uses it
+
+LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+
+// ---------------------------------------------------------------------------
+unsigned long lastUpdate = 0;
+const unsigned long UPDATE_INTERVAL = 500; // ms between sensor reads
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(IR_SENSOR_1, INPUT);
+  pinMode(IR_SENSOR_2, INPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  // pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // pinMode(LED_RED, OUTPUT);
+  // pinMode(LED_YELLOW, OUTPUT);
+  // pinMode(LED_GREEN, OUTPUT);
+  // pinMode(BUZZER, OUTPUT);
+
+  lcd.begin(16, 2);
+  lcd.print("Bottle Machine");
+  lcd.setCursor(0, 1);
+  lcd.print("Booting...");
+  delay(1500);
+  lcd.clear();
+
+  Serial.println("All sensors + LCD initialized.");
+}
+
+void loop() {
+  if (millis() - lastUpdate < UPDATE_INTERVAL) {
+    return; // simple non-blocking timing, avoids delay() everywhere
+  }
+  lastUpdate = millis();
+
+  // --- Read IR sensors ---
+  int ir1 = digitalRead(IR_SENSOR_1);
+  int ir2 = digitalRead(IR_SENSOR_2);
+  bool bottlePresent = (ir1 == LOW);
+  bool dropDetected = (ir2 == LOW);
+
+  // --- Read ultrasonic distance ---
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  float distanceCm = (duration * 0.0343) / 2;
+
+  // --- Button (paused) ---
+  // int buttonState = digitalRead(BUTTON_PIN);
+  // bool buttonPressed = (buttonState == LOW);
+
+  // --- Serial debug output ---
+  Serial.print("IR1: ");
+  Serial.print(bottlePresent ? "DETECTED" : "clear");
+  Serial.print(" | IR2: ");
+  Serial.print(dropDetected ? "DETECTED" : "clear");
+  Serial.print(" | Dist: ");
+  Serial.print(duration == 0 ? -1 : distanceCm);
+  Serial.println(" cm");
+
+  // --- LCD output ---
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  if (bottlePresent) {
+    lcd.print("Bottle detected");
+  } else {
+    lcd.print("Place a bottle");
+  }
+
+  lcd.setCursor(0, 1);
+  if (duration == 0) {
+    lcd.print("Height: --");
+  } else {
+    lcd.print("Height: ");
+    lcd.print(distanceCm);
+    lcd.print("cm");
+  }
+
+  // --- LEDs / buzzer (paused) ---
+  // if (bottlePresent) {
+  //   digitalWrite(LED_GREEN, HIGH);
+  //   digitalWrite(LED_RED, LOW);
+  // } else {
+  //   digitalWrite(LED_GREEN, LOW);
+  //   digitalWrite(LED_RED, HIGH);
+  // }
+}
