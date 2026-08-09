@@ -1,0 +1,29 @@
+Place finger on sensor...
+Timed out waiting for finger.
+
+
+Connect:
+
+🔴 Red
+
+Fingerprint Red → ESP32 VIN
+
+⚫ Black
+
+Fingerprint Black → ESP32 GND
+
+🟡 Yellow
+
+Fingerprint Yellow → ESP32 GPIO16
+
+🟢 Green
+
+Fingerprint Green → ESP32 GPIO17
+
+🔵 Blue
+
+Leave it hanging. Do not connect it.
+
+⚪ White
+
+Leave it hanging. Do not connect it.
