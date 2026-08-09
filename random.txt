@@ -62,3 +62,5 @@ IR1: clear | IR2: DETECTED | Dist: 27.83 cm | Weight: 890.00 g
 IR1: clear | IR2: DETECTED | Dist: 26.36 cm | Weight: 846.00 g
 IR1: clear | IR2: clear | Dist: 51.19 cm | Weight: 758.00 g
 
+
+"Technical product photography, close-up macro shot of a DIY electronics workbench setup: a silver metal bar-type load cell (10kg strain gauge sensor, rectangular bar shape with mounting holes at each end) mounted horizontally between two wooden blocks of slightly different heights. The left end of the load cell is firmly bolted flat onto a taller wooden block using two screws. The right end rests freely on a shorter wooden block/spacer, creating a slight downward tilt or gap, not bolted down. A small flat wooden or plastic platform sits on top of the free right end. A small water bottle sits on the platform as a test weight. Thin colored wires (red, black, white, green) run from the load cell to an HX711 amplifier module visible in the background, connected to breadboard and ESP32 microcontroller. Bright, clean lighting, shallow depth of field, realistic hobbyist electronics prototype aesthetic, slightly cluttered workbench with wood grain desk visible."
