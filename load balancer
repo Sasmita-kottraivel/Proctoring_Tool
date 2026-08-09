@@ -7,6 +7,8 @@
     - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19  [readings a bit jittery - needs checking]
     - SG90 Servo (flap)             -> Signal GPIO 15, opens only when bottle detected
     - Load cell + HX711             -> DT GPIO 16, SCK GPIO 17, calibrated to grams
+        NOTE: readings inconsistent (600g showing as -233g) - re-taring and re-testing needed.
+        Send 't' over Serial Monitor at any time to re-tare (zero) the scale.
 
   Paused / not yet wired (commented out below, ready to re-enable later):
     - LCD          -> RS 13, E 12, D4 33, D5 26, D6 25 (loose thin-wire connections, revisit later)
@@ -26,7 +28,7 @@
 // ---------------------------------------------------------------------------
 // Mode toggle
 // ---------------------------------------------------------------------------
-#define CALIBRATION_MODE false   // set true to re-run calibration if needed
+#define CALIBRATION_MODE false   // set true to re-run full calibration if needed
 
 // ---------------------------------------------------------------------------
 // Pin definitions
@@ -99,10 +101,14 @@ void setup() {
   if (scale.is_ready()) {
     Serial.println("HX711 found and ready.");
     scale.set_scale(CALIBRATION_FACTOR);
-    scale.tare(); // zero it out at startup, make sure nothing is on it
+    delay(500); // let the HX711 stabilize before taring
+    scale.tare(10); // average of 10 readings for a more stable tare
+    Serial.println("Tared. Make sure load cell was empty during this.");
   } else {
     Serial.println("HX711 not found. Check wiring.");
   }
+
+  Serial.println("Send 't' anytime via Serial Monitor to re-tare the scale.");
 
   // pinMode(BUTTON_PIN, INPUT_PULLUP);
   // pinMode(LED_RED, OUTPUT);
@@ -123,6 +129,16 @@ void setup() {
 void loop() {
   if (CALIBRATION_MODE) {
     return;
+  }
+
+  // --- Check for re-tare command over Serial ---
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    if (cmd == 't' || cmd == 'T') {
+      Serial.println("Re-taring... make sure load cell is empty!");
+      scale.tare(10);
+      Serial.println("Tare complete.");
+    }
   }
 
   if (millis() - lastUpdate < UPDATE_INTERVAL) {
@@ -223,7 +239,7 @@ void runCalibration() {
   Serial.println("Taring in 5 seconds...");
   delay(5000);
 
-  scale.tare();
+  scale.tare(10);
   Serial.println("Tare complete. Now place your known weight on the load cell.");
   Serial.println("Waiting 10 seconds for you to place it...");
   delay(10000);
