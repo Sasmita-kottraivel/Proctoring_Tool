@@ -1,0 +1,352 @@
+/*
+  Bottle Recycling Machine - Main ESP32 Sketch (work in progress)
+
+  Currently wired and tested:
+    - IR sensor 1 (bottle presence) -> GPIO 4
+    - IR sensor 2 (drop detection)  -> GPIO 5  [reads DETECTED even with nothing there - needs checking]
+    - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19  [readings a bit jittery - needs checking]
+    - SG90 Servo (flap)             -> Signal GPIO 15, opens only when bottle detected
+    - Fingerprint sensor (UART)     -> TX->GPIO16 (RX2), RX->GPIO17 (TX2)
+
+  ON HOLD:
+    - Load cell + HX711  -> was DT GPIO16 / SCK GPIO17 (same pins as fingerprint sensor now -
+      not physically mountable yet, cantilever mount needed before recalibrating).
+      Move fingerprint sensor to different pins before re-enabling this.
+
+  Paused / not yet wired (commented out below, ready to re-enable later):
+    - LCD          -> RS 13, E 12, D4 33, D5 26, D6 25 (loose thin-wire connections, revisit later)
+    - Button       -> GPIO 27
+    - LEDs         -> GPIO 21 (red), 22 (yellow), 23 (green)
+    - Buzzer       -> GPIO 32
+
+  Requires libraries:
+    - ESP32Servo (Tools -> Manage Libraries -> search "ESP32Servo")
+    - HX711 by Bogdan Necula (Tools -> Manage Libraries -> search "HX711")  [not used while load cell on hold]
+    - Adafruit Fingerprint Sensor Library (Tools -> Manage Libraries -> search "Adafruit Fingerprint")
+
+  --- FINGERPRINT TEST COMMANDS (type in Serial Monitor) ---
+    e = enroll a new fingerprint
+    s = scan and try to match a fingerprint
+*/
+
+#include <ESP32Servo.h>
+#include <Adafruit_Fingerprint.h>
+// #include "HX711.h"          // paused - load cell on hold
+// #include <LiquidCrystal.h>  // paused until LCD wiring is stable
+
+// ---------------------------------------------------------------------------
+// Pin definitions
+// ---------------------------------------------------------------------------
+#define IR_SENSOR_1 4
+#define IR_SENSOR_2 5
+#define TRIG_PIN 18
+#define ECHO_PIN 19
+#define SERVO_PIN 15
+
+// Fingerprint sensor (using HardwareSerial 2)
+#define FINGERPRINT_RX 16   // connects to sensor's TX
+#define FINGERPRINT_TX 17   // connects to sensor's RX
+
+// -- Load cell pins (ON HOLD - same pins as fingerprint sensor above, do not use both at once) --
+// #define LOADCELL_DOUT_PIN 16
+// #define LOADCELL_SCK_PIN 17
+
+// -- LCD pins (paused, uncomment when wiring is stable) --
+// #define LCD_RS 13
+// #define LCD_E 12
+// #define LCD_D4 14
+// #define LCD_D5 33
+// #define LCD_D6 26
+// #define LCD_D7 25
+
+// -- Paused components, uncomment when wired --
+// #define BUTTON_PIN 27
+// #define LED_RED 21
+// #define LED_YELLOW 22
+// #define LED_GREEN 23
+// #define BUZZER 32
+
+Servo flapServo;
+// HX711 scale; // paused
+
+HardwareSerial fingerSerial(2); // UART2
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&fingerSerial);
+
+// LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+
+// Servo angles - adjust these once the flap is physically mounted
+const int SERVO_CLOSED_ANGLE = 0;
+const int SERVO_OPEN_ANGLE = 90;
+
+// How long the flap stays open once a bottle is detected (ms)
+const unsigned long FLAP_OPEN_DURATION = 2000;
+
+// Load cell calibration factor (kept for later, not currently used)
+// float CALIBRATION_FACTOR = 34887.72;
+
+// ---------------------------------------------------------------------------
+unsigned long lastUpdate = 0;
+const unsigned long UPDATE_INTERVAL = 500; // ms between sensor reads
+
+// Flap state tracking
+bool flapIsOpen = false;
+unsigned long flapOpenedAt = 0;
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(IR_SENSOR_1, INPUT);
+  pinMode(IR_SENSOR_2, INPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  flapServo.attach(SERVO_PIN);
+  flapServo.write(SERVO_CLOSED_ANGLE); // start closed
+
+  // --- Fingerprint sensor init ---
+  fingerSerial.begin(57600, SERIAL_8N1, FINGERPRINT_RX, FINGERPRINT_TX);
+  delay(100);
+  if (finger.verifyPassword()) {
+    Serial.println("Fingerprint sensor found and ready.");
+  } else {
+    Serial.println("Fingerprint sensor NOT found. Check wiring/baud rate.");
+  }
+  Serial.println("Fingerprint commands: 'e' = enroll, 's' = scan/match");
+
+  // --- Load cell (on hold) ---
+  // scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  // if (scale.is_ready()) {
+  //   scale.set_scale(CALIBRATION_FACTOR);
+  //   scale.tare(10);
+  // }
+
+  // pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // pinMode(LED_RED, OUTPUT);
+  // pinMode(LED_YELLOW, OUTPUT);
+  // pinMode(LED_GREEN, OUTPUT);
+  // pinMode(BUZZER, OUTPUT);
+
+  // lcd.begin(16, 2);
+  // lcd.print("Bottle Machine");
+  // lcd.setCursor(0, 1);
+  // lcd.print("Booting...");
+  // delay(1500);
+  // lcd.clear();
+
+  Serial.println("All sensors + servo + fingerprint initialized.");
+}
+
+void loop() {
+  // --- Check for fingerprint test commands over Serial ---
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    if (cmd == 'e' || cmd == 'E') {
+      enrollFingerprint();
+    } else if (cmd == 's' || cmd == 'S') {
+      scanAndMatchFingerprint();
+    }
+    // 't' command for load cell tare removed while on hold
+  }
+
+  if (millis() - lastUpdate < UPDATE_INTERVAL) {
+    checkFlapAutoClose();
+    return;
+  }
+  lastUpdate = millis();
+
+  // --- Read IR sensors ---
+  int ir1 = digitalRead(IR_SENSOR_1);
+  int ir2 = digitalRead(IR_SENSOR_2);
+  bool bottlePresent = (ir1 == LOW);
+  bool dropDetected = (ir2 == LOW);
+
+  // --- Read ultrasonic distance ---
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  float distanceCm = (duration * 0.0343) / 2;
+
+  // --- Load cell (on hold) ---
+  // float weightGrams = 0;
+  // if (scale.is_ready()) {
+  //   weightGrams = scale.get_units(5);
+  // }
+
+  // --- Button (paused) ---
+  // int buttonState = digitalRead(BUTTON_PIN);
+  // bool buttonPressed = (buttonState == LOW);
+
+  // --- Serial debug output ---
+  Serial.print("IR1: ");
+  Serial.print(bottlePresent ? "DETECTED" : "clear");
+  Serial.print(" | IR2: ");
+  Serial.print(dropDetected ? "DETECTED" : "clear");
+  Serial.print(" | Dist: ");
+  Serial.print(duration == 0 ? -1 : distanceCm);
+  Serial.println(" cm");
+
+  // --- Flap control: open only if bottle detected and flap isn't already open ---
+  if (bottlePresent && !flapIsOpen) {
+    openFlap();
+  }
+
+  checkFlapAutoClose();
+
+  // --- LCD output (paused) ---
+  // lcd.clear();
+  // lcd.setCursor(0, 0);
+  // if (bottlePresent) {
+  //   lcd.print("Bottle detected");
+  // } else {
+  //   lcd.print("Place a bottle");
+  // }
+  // lcd.setCursor(0, 1);
+  // if (duration == 0) {
+  //   lcd.print("Height: --");
+  // } else {
+  //   lcd.print("Height: ");
+  //   lcd.print(distanceCm);
+  //   lcd.print("cm");
+  // }
+
+  // --- LEDs / buzzer (paused) ---
+  // if (bottlePresent) {
+  //   digitalWrite(LED_GREEN, HIGH);
+  //   digitalWrite(LED_RED, LOW);
+  // } else {
+  //   digitalWrite(LED_GREEN, LOW);
+  //   digitalWrite(LED_RED, HIGH);
+  // }
+}
+
+// ---------------------------------------------------------------------------
+void openFlap() {
+  Serial.println("Bottle detected -> Opening flap...");
+  flapServo.write(SERVO_OPEN_ANGLE);
+  flapIsOpen = true;
+  flapOpenedAt = millis();
+}
+
+void checkFlapAutoClose() {
+  if (flapIsOpen && (millis() - flapOpenedAt >= FLAP_OPEN_DURATION)) {
+    Serial.println("Closing flap...");
+    flapServo.write(SERVO_CLOSED_ANGLE);
+    flapIsOpen = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Enrolls a new fingerprint. Requires two good reads of the same finger.
+// Stores it at a chosen ID slot (1-127 typically, depending on sensor model).
+// ---------------------------------------------------------------------------
+void enrollFingerprint() {
+  Serial.println("=== FINGERPRINT ENROLL ===");
+  Serial.println("Enter an ID number (1-127) to store this fingerprint as, then press Enter:");
+
+  while (!Serial.available()) { delay(50); }
+  int id = Serial.parseInt();
+  if (id < 1 || id > 127) {
+    Serial.println("Invalid ID. Must be 1-127. Aborting.");
+    return;
+  }
+
+  Serial.print("Enrolling ID #");
+  Serial.println(id);
+
+  Serial.println("Place finger on sensor...");
+  int p = -1;
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    if (p == FINGERPRINT_OK) {
+      Serial.println("Image captured.");
+    } else if (p == FINGERPRINT_NOFINGER) {
+      // just keep waiting
+    } else {
+      Serial.println("Error capturing image.");
+      return;
+    }
+  }
+
+  p = finger.image2Tz(1);
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error converting image. Try again.");
+    return;
+  }
+
+  Serial.println("Remove finger.");
+  delay(2000);
+  p = 0;
+  while (p != FINGERPRINT_NOFINGER) {
+    p = finger.getImage();
+  }
+
+  Serial.println("Place same finger again...");
+  p = -1;
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    if (p == FINGERPRINT_OK) {
+      Serial.println("Image captured.");
+    } else if (p == FINGERPRINT_NOFINGER) {
+      // keep waiting
+    } else {
+      Serial.println("Error capturing image.");
+      return;
+    }
+  }
+
+  p = finger.image2Tz(2);
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error converting second image. Try again.");
+    return;
+  }
+
+  p = finger.createModel();
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Prints did not match each other. Enrollment failed.");
+    return;
+  }
+
+  p = finger.storeModel(id);
+  if (p == FINGERPRINT_OK) {
+    Serial.println("Fingerprint enrolled successfully!");
+  } else {
+    Serial.println("Error storing fingerprint.");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scans a finger and tries to match it against enrolled fingerprints.
+// ---------------------------------------------------------------------------
+void scanAndMatchFingerprint() {
+  Serial.println("=== FINGERPRINT SCAN ===");
+  Serial.println("Place finger on sensor...");
+
+  int p = -1;
+  unsigned long startTime = millis();
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    if (millis() - startTime > 10000) {
+      Serial.println("Timed out waiting for finger.");
+      return;
+    }
+  }
+
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Error converting image.");
+    return;
+  }
+
+  p = finger.fingerSearch();
+  if (p == FINGERPRINT_OK) {
+    Serial.print("Match found! ID #");
+    Serial.print(finger.fingerID);
+    Serial.print(" with confidence ");
+    Serial.println(finger.confidence);
+  } else {
+    Serial.println("No match found.");
+  }
+}
