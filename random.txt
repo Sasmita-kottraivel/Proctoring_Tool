@@ -48,3 +48,17 @@ void loop() {
 
   delay(300);
 }
+
+IR1: clear | IR2: DETECTED | Dist: 29.31 cm | Weight: 789.00 g
+IR1: clear | IR2: DETECTED | Dist: 29.88 cm | Weight: 810.00 g
+IR1: clear | IR2: DETECTED | Dist: 16.28 cm | Weight: 833.00 g
+IR1: clear | IR2: DETECTED | Dist: 30.39 cm | Weight: 778.00 g
+IR1: clear | IR2: DETECTED | Dist: 16.28 cm | Weight: 821.00 g
+IR1: clear | IR2: DETECTED | Dist: 30.41 cm | Weight: 879.00 g
+IR1: clear | IR2: DETECTED | Dist: 16.91 cm | Weight: 851.00 g
+IR1: clear | IR2: DETECTED | Dist: 18.56 cm | Weight: 824.00 g
+IR1: clear | IR2: DETECTED | Dist: 16.28 cm | Weight: 838.00 g
+IR1: clear | IR2: DETECTED | Dist: 27.83 cm | Weight: 890.00 g
+IR1: clear | IR2: DETECTED | Dist: 26.36 cm | Weight: 846.00 g
+IR1: clear | IR2: clear | Dist: 51.19 cm | Weight: 758.00 g
+
