@@ -5,7 +5,7 @@
     - IR sensor 1 (bottle presence) -> GPIO 4
     - IR sensor 2 (drop detection)  -> GPIO 5
     - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19
-    - SG90 Servo (flap)             -> Signal GPIO 15
+    - SG90 Servo (flap)             -> Signal GPIO 15, opens only when bottle detected
 
   Paused / not yet wired (commented out below, ready to re-enable later):
     - LCD          -> RS 13, E 12, D4 33, D5 26, D6 25 (loose thin-wire connections, revisit later)
@@ -51,11 +51,16 @@ Servo flapServo;
 const int SERVO_CLOSED_ANGLE = 0;
 const int SERVO_OPEN_ANGLE = 90;
 
+// How long the flap stays open once a bottle is detected (ms)
+const unsigned long FLAP_OPEN_DURATION = 2000;
+
 // ---------------------------------------------------------------------------
 unsigned long lastUpdate = 0;
 const unsigned long UPDATE_INTERVAL = 500; // ms between sensor reads
 
-void testServoSweep(); // forward declaration
+// Flap state tracking
+bool flapIsOpen = false;
+unsigned long flapOpenedAt = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -86,7 +91,9 @@ void setup() {
 
 void loop() {
   if (millis() - lastUpdate < UPDATE_INTERVAL) {
-    return; // simple non-blocking timing, avoids delay() everywhere
+    // Still check if it's time to close the flap, even between sensor reads
+    checkFlapAutoClose();
+    return;
   }
   lastUpdate = millis();
 
@@ -118,8 +125,12 @@ void loop() {
   Serial.print(duration == 0 ? -1 : distanceCm);
   Serial.println(" cm");
 
-  // Servo test sweep - remove once flap logic is tied to bottlePresent/reward flow
-  testServoSweep();
+  // --- Flap control: open only if bottle detected and flap isn't already open ---
+  if (bottlePresent && !flapIsOpen) {
+    openFlap();
+  }
+
+  checkFlapAutoClose();
 
   // --- LCD output (paused) ---
   // lcd.clear();
@@ -149,16 +160,24 @@ void loop() {
 }
 
 // ---------------------------------------------------------------------------
-// Standalone servo test cycle - runs independently of the main sensor timer
-// so you can see it sweep regardless of sensor readings.
-// Remove or gate this behind bottlePresent logic once flap behavior is final.
+// Opens the flap and records when it was opened, so it can auto-close later
+// without blocking the rest of the loop with delay().
 // ---------------------------------------------------------------------------
-void testServoSweep() {
-  Serial.println("Opening flap...");
+void openFlap() {
+  Serial.println("Bottle detected -> Opening flap...");
   flapServo.write(SERVO_OPEN_ANGLE);
-  delay(2000);
+  flapIsOpen = true;
+  flapOpenedAt = millis();
+}
 
-  Serial.println("Closing flap...");
-  flapServo.write(SERVO_CLOSED_ANGLE);
-  delay(2000);
+// ---------------------------------------------------------------------------
+// Closes the flap automatically once it's been open long enough
+// (FLAP_OPEN_DURATION), without using delay() so sensors keep working.
+// ---------------------------------------------------------------------------
+void checkFlapAutoClose() {
+  if (flapIsOpen && (millis() - flapOpenedAt >= FLAP_OPEN_DURATION)) {
+    Serial.println("Closing flap...");
+    flapServo.write(SERVO_CLOSED_ANGLE);
+    flapIsOpen = false;
+  }
 }
