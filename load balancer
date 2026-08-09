@@ -3,10 +3,10 @@
 
   Currently wired and tested:
     - IR sensor 1 (bottle presence) -> GPIO 4
-    - IR sensor 2 (drop detection)  -> GPIO 5
-    - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19
+    - IR sensor 2 (drop detection)  -> GPIO 5  [reads DETECTED even with nothing there - needs checking]
+    - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19  [readings a bit jittery - needs checking]
     - SG90 Servo (flap)             -> Signal GPIO 15, opens only when bottle detected
-    - Load cell + HX711             -> DT GPIO 16, SCK GPIO 17
+    - Load cell + HX711             -> DT GPIO 16, SCK GPIO 17, calibrated to grams
 
   Paused / not yet wired (commented out below, ready to re-enable later):
     - LCD          -> RS 13, E 12, D4 33, D5 26, D6 25 (loose thin-wire connections, revisit later)
@@ -17,12 +17,6 @@
   Requires libraries:
     - ESP32Servo (Tools -> Manage Libraries -> search "ESP32Servo")
     - HX711 by Bogdan Necula (Tools -> Manage Libraries -> search "HX711")
-
-  --- LOAD CELL CALIBRATION MODE ---
-  Set CALIBRATION_MODE to true below, upload, and follow the Serial Monitor
-  instructions to get a raw reading for a known weight. Once you have your
-  calibration factor, set CALIBRATION_MODE back to false and plug the factor
-  into CALIBRATION_FACTOR so get_units() returns real grams.
 */
 
 #include <ESP32Servo.h>
@@ -32,7 +26,7 @@
 // ---------------------------------------------------------------------------
 // Mode toggle
 // ---------------------------------------------------------------------------
-#define CALIBRATION_MODE false   // set true to run calibration routine instead of normal operation
+#define CALIBRATION_MODE false   // set true to re-run calibration if needed
 
 // ---------------------------------------------------------------------------
 // Pin definitions
@@ -72,9 +66,9 @@ const int SERVO_OPEN_ANGLE = 90;
 // How long the flap stays open once a bottle is detected (ms)
 const unsigned long FLAP_OPEN_DURATION = 2000;
 
-// Load cell calibration factor - update this once you've calibrated
-// (raw_reading_with_known_weight - tare_offset) / known_weight_in_grams
-float CALIBRATION_FACTOR = 1.0; // placeholder until calibrated
+// Load cell calibration factor, calculated from: raw_reading / known_weight_grams
+// 6628666 / 190g = 34887.72
+float CALIBRATION_FACTOR = 34887.72;
 
 // ---------------------------------------------------------------------------
 unsigned long lastUpdate = 0;
@@ -98,7 +92,7 @@ void setup() {
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
   if (CALIBRATION_MODE) {
-    runCalibration(); // runs once, blocks here, see function below
+    runCalibration();
     return;
   }
 
@@ -128,7 +122,7 @@ void setup() {
 
 void loop() {
   if (CALIBRATION_MODE) {
-    return; // calibration already ran once in setup(), nothing to loop
+    return;
   }
 
   if (millis() - lastUpdate < UPDATE_INTERVAL) {
@@ -208,9 +202,6 @@ void loop() {
 }
 
 // ---------------------------------------------------------------------------
-// Opens the flap and records when it was opened, so it can auto-close later
-// without blocking the rest of the loop with delay().
-// ---------------------------------------------------------------------------
 void openFlap() {
   Serial.println("Bottle detected -> Opening flap...");
   flapServo.write(SERVO_OPEN_ANGLE);
@@ -218,10 +209,6 @@ void openFlap() {
   flapOpenedAt = millis();
 }
 
-// ---------------------------------------------------------------------------
-// Closes the flap automatically once it's been open long enough
-// (FLAP_OPEN_DURATION), without using delay() so sensors keep working.
-// ---------------------------------------------------------------------------
 void checkFlapAutoClose() {
   if (flapIsOpen && (millis() - flapOpenedAt >= FLAP_OPEN_DURATION)) {
     Serial.println("Closing flap...");
@@ -230,9 +217,6 @@ void checkFlapAutoClose() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// One-time calibration routine. Runs only when CALIBRATION_MODE is true.
-// ---------------------------------------------------------------------------
 void runCalibration() {
   Serial.println("=== LOAD CELL CALIBRATION ===");
   Serial.println("Remove all weight from the load cell.");
@@ -247,6 +231,5 @@ void runCalibration() {
   long reading = scale.get_units(10);
   Serial.print("Raw reading with known weight: ");
   Serial.println(reading);
-  Serial.println("Tell Claude this number and the actual weight (grams) of your object");
-  Serial.println("to calculate CALIBRATION_FACTOR, then set CALIBRATION_MODE back to false.");
+  Serial.println("Tell Claude this number and the actual weight (grams) of your object.");
 }
