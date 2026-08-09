@@ -1,0 +1,204 @@
+/*
+  Bottle Recycling Machine - Main ESP32 Sketch (work in progress)
+
+  Currently wired and tested:
+    - IR sensor 1 (bottle presence) -> GPIO 4
+    - IR sensor 2 (drop detection)  -> GPIO 5
+    - Ultrasonic HC-SR04            -> Trig GPIO 18, Echo GPIO 19
+    - SG90 Servo (flap)             -> Signal GPIO 15, opens only when bottle detected
+    - Load cell + HX711             -> DT GPIO 16, SCK GPIO 17 (raw readings, not yet calibrated to grams)
+
+  Paused / not yet wired (commented out below, ready to re-enable later):
+    - LCD          -> RS 13, E 12, D4 33, D5 26, D6 25 (loose thin-wire connections, revisit later)
+    - Button       -> GPIO 27
+    - LEDs         -> GPIO 21 (red), 22 (yellow), 23 (green)
+    - Buzzer       -> GPIO 32
+
+  Requires libraries:
+    - ESP32Servo (Tools -> Manage Libraries -> search "ESP32Servo")
+    - HX711 by Bogdan Necula (Tools -> Manage Libraries -> search "HX711")
+*/
+
+#include <ESP32Servo.h>
+#include "HX711.h"
+// #include <LiquidCrystal.h>  // paused until LCD wiring is stable
+
+// ---------------------------------------------------------------------------
+// Pin definitions
+// ---------------------------------------------------------------------------
+#define IR_SENSOR_1 4
+#define IR_SENSOR_2 5
+#define TRIG_PIN 18
+#define ECHO_PIN 19
+#define SERVO_PIN 15
+#define LOADCELL_DOUT_PIN 16
+#define LOADCELL_SCK_PIN 17
+
+// -- LCD pins (paused, uncomment when wiring is stable) --
+// #define LCD_RS 13
+// #define LCD_E 12
+// #define LCD_D4 14
+// #define LCD_D5 33
+// #define LCD_D6 26
+// #define LCD_D7 25
+
+// -- Paused components, uncomment when wired --
+// #define BUTTON_PIN 27
+// #define LED_RED 21
+// #define LED_YELLOW 22
+// #define LED_GREEN 23
+// #define BUZZER 32
+
+Servo flapServo;
+HX711 scale;
+
+// LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+
+// Servo angles - adjust these once the flap is physically mounted
+const int SERVO_CLOSED_ANGLE = 0;
+const int SERVO_OPEN_ANGLE = 90;
+
+// How long the flap stays open once a bottle is detected (ms)
+const unsigned long FLAP_OPEN_DURATION = 2000;
+
+// ---------------------------------------------------------------------------
+unsigned long lastUpdate = 0;
+const unsigned long UPDATE_INTERVAL = 500; // ms between sensor reads
+
+// Flap state tracking
+bool flapIsOpen = false;
+unsigned long flapOpenedAt = 0;
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(IR_SENSOR_1, INPUT);
+  pinMode(IR_SENSOR_2, INPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  flapServo.attach(SERVO_PIN);
+  flapServo.write(SERVO_CLOSED_ANGLE); // start closed
+
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  if (scale.is_ready()) {
+    Serial.println("HX711 found and ready.");
+  } else {
+    Serial.println("HX711 not found. Check wiring.");
+  }
+
+  // pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // pinMode(LED_RED, OUTPUT);
+  // pinMode(LED_YELLOW, OUTPUT);
+  // pinMode(LED_GREEN, OUTPUT);
+  // pinMode(BUZZER, OUTPUT);
+
+  // lcd.begin(16, 2);
+  // lcd.print("Bottle Machine");
+  // lcd.setCursor(0, 1);
+  // lcd.print("Booting...");
+  // delay(1500);
+  // lcd.clear();
+
+  Serial.println("All sensors + servo initialized.");
+}
+
+void loop() {
+  if (millis() - lastUpdate < UPDATE_INTERVAL) {
+    // Still check if it's time to close the flap, even between sensor reads
+    checkFlapAutoClose();
+    return;
+  }
+  lastUpdate = millis();
+
+  // --- Read IR sensors ---
+  int ir1 = digitalRead(IR_SENSOR_1);
+  int ir2 = digitalRead(IR_SENSOR_2);
+  bool bottlePresent = (ir1 == LOW);
+  bool dropDetected = (ir2 == LOW);
+
+  // --- Read ultrasonic distance ---
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  float distanceCm = (duration * 0.0343) / 2;
+
+  // --- Read load cell (raw value, not yet calibrated to grams) ---
+  long loadReading = -1;
+  if (scale.is_ready()) {
+    loadReading = scale.read();
+  }
+
+  // --- Button (paused) ---
+  // int buttonState = digitalRead(BUTTON_PIN);
+  // bool buttonPressed = (buttonState == LOW);
+
+  // --- Serial debug output ---
+  Serial.print("IR1: ");
+  Serial.print(bottlePresent ? "DETECTED" : "clear");
+  Serial.print(" | IR2: ");
+  Serial.print(dropDetected ? "DETECTED" : "clear");
+  Serial.print(" | Dist: ");
+  Serial.print(duration == 0 ? -1 : distanceCm);
+  Serial.print(" cm | LoadCell raw: ");
+  Serial.println(loadReading);
+
+  // --- Flap control: open only if bottle detected and flap isn't already open ---
+  if (bottlePresent && !flapIsOpen) {
+    openFlap();
+  }
+
+  checkFlapAutoClose();
+
+  // --- LCD output (paused) ---
+  // lcd.clear();
+  // lcd.setCursor(0, 0);
+  // if (bottlePresent) {
+  //   lcd.print("Bottle detected");
+  // } else {
+  //   lcd.print("Place a bottle");
+  // }
+  // lcd.setCursor(0, 1);
+  // if (duration == 0) {
+  //   lcd.print("Height: --");
+  // } else {
+  //   lcd.print("Height: ");
+  //   lcd.print(distanceCm);
+  //   lcd.print("cm");
+  // }
+
+  // --- LEDs / buzzer (paused) ---
+  // if (bottlePresent) {
+  //   digitalWrite(LED_GREEN, HIGH);
+  //   digitalWrite(LED_RED, LOW);
+  // } else {
+  //   digitalWrite(LED_GREEN, LOW);
+  //   digitalWrite(LED_RED, HIGH);
+  // }
+}
+
+// ---------------------------------------------------------------------------
+// Opens the flap and records when it was opened, so it can auto-close later
+// without blocking the rest of the loop with delay().
+// ---------------------------------------------------------------------------
+void openFlap() {
+  Serial.println("Bottle detected -> Opening flap...");
+  flapServo.write(SERVO_OPEN_ANGLE);
+  flapIsOpen = true;
+  flapOpenedAt = millis();
+}
+
+// ---------------------------------------------------------------------------
+// Closes the flap automatically once it's been open long enough
+// (FLAP_OPEN_DURATION), without using delay() so sensors keep working.
+// ---------------------------------------------------------------------------
+void checkFlapAutoClose() {
+  if (flapIsOpen && (millis() - flapOpenedAt >= FLAP_OPEN_DURATION)) {
+    Serial.println("Closing flap...");
+    flapServo.write(SERVO_CLOSED_ANGLE);
+    flapIsOpen = false;
+  }
+}
