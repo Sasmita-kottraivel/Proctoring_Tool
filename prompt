@@ -1,0 +1,29 @@
+
+Create a complete Python script to classify images into two categories: "glass_bottle" and "plastic_bottle". 
+
+Use PyTorch and torchvision with a pre-trained MobileNetV3 model for efficient training. 
+
+The script must include the following distinct phases, clearly separated by comments:
+
+1. DATA PREPARATION & AUGMENTATION:
+- Set up training and validation data loaders using standard directory structures (train/ and val/).
+- Implement data augmentation for training: resize to 224x224, random horizontal flip, random rotation (15 degrees), color jitter, and normalize using ImageNet stats.
+- Implement validation transforms: resize to 224x224 and normalize.
+- Set batch size to 32.
+
+2. MODEL DEFINITION:
+- Load a pre-trained MobileNetV3_Large model.
+- Freeze all the backbone weights to use it as a fixed feature extractor.
+- Replace the final classifier layer with a new sequential layer: Linear(num_features, 128) -> ReLU -> Dropout(0.3) -> Linear(128, 2) for our binary classes.
+
+3. TRAINING PIPELINE:
+- Define CrossEntropyLoss as the loss function.
+- Use the Adam optimizer with a learning rate of 0.001, tracking only the parameters of the new classifier.
+- Write a training loop for 10 epochs that tracks both loss and accuracy for training and validation steps.
+- Print metrics at the end of each epoch.
+
+4. SAVING & INFERENCE:
+- Save the trained model's state_dict to a file named 'bottle_classifier.pth'.
+- Write a separate utility function called `predict_bottle(image_path)` that loads the saved model, opens a single image using PIL, applies the validation transform, runs inference on the CPU/GPU, and prints the predicted class name ("Glass Bottle" or "Plastic Bottle") along with the confidence score.
+
+Ensure the code uses proper device handling (cuda, mps, or cpu) and includes error handling for loading images.
